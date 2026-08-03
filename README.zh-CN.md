@@ -2,13 +2,25 @@
 
 # NFS 客户端缓存小项目
 
-这个实验接续 Stubline 后端 ADR 0011《将电子票存为对象》的存储决策，展示共享文件系统挂载需要应用考虑的因素：已打开的读取句柄、属性缓存、写入方关闭文件以及客户端写策略。请在**支持 NFS server 内核模块的 Linux Docker 主机**上运行。`erichough/nfs-server:2.2.1` 需要 `privileged: true`（或者至少 `CAP_SYS_ADMIN` 加内核支持），客户端挂载也需要特权。该旧镜像只有 amd64。macOS Docker Desktop 的容器运行在独立 Linux VM，可能缺少 NFS 内核模块，因此这里不声称该实验能在其上运行。
+server 和 client 使用固定版本 Debian 12.12 镜像，安装 `nfs-kernel-server` 与 `nfs-common`，同时支持 arm64 和 amd64。容器需要 `privileged: true` 才能启动内核 NFS 服务并挂载 NFS 文件系统。在 macOS Docker Desktop 上，server 和两个 client 共用 Docker VM 的 Linux 内核：两台“机器”是同一主机上的两个内核挂载，不是独立内核。旧镜像已在 Apple Silicon 上成功挂载；替换后的镜像与新探针尚未经过 Docker 实测。
 
-运行 `./mvnw -q verify` 验证 Java 项目；运行 `./scripts/observe.sh cached` 进行真实内核 NFS 实验。脚本启动一个 server 和两个 client，并以 `actimeo=10` 将同一 NFSv4 export 挂载到两端。A 先写入 `before`，B 打开文件，A 随后覆盖成 `after!`。B 通过未关闭的句柄立即再读，11 秒后再读，最后关闭并重新打开。输出标签固定；**读到的值是真实观察，不是脚本写死的预期**。典型缓存轨迹为 `before`、`before`、`after!`、`after!`；close-to-open 通常让最后一次读取看到 `after!`。客户端实现和时序也可能让立即读取就看到新值，因此应比较实际输出，不能假定必有旧读。
+运行 `./mvnw -q verify`，再从仓库根目录运行各脚本。每次调用都新建 volume 和挂载，确保 B 的缓存从已知状态开始；trap 即使失败也运行 `docker compose down -v`。
 
-再运行 `./scripts/observe.sh noac` 和 `./scripts/observe.sh sync`，比较四处输出。`noac` 关闭属性缓存，通常缩短旧读窗口，但增加元数据查询和网络成本。`sync` 要求客户端同步发送写入，改变写入确认与延迟，不保证读取一定更新。`actimeo=10` 限定属性缓存时间，并非所有数据缓存现象的严格上界。属性缓存的 freshness interval 对应这一取舍：更长间隔节省查询但可能看到旧元数据；write policy 对应写入者何时等待远端持久化。
+```sh
+./scripts/observe.sh cached
+./scripts/observe.sh close-to-open
+./scripts/observe.sh noac
+./scripts/observe.sh write
+./scripts/observe.sh v4
+```
 
-脚本只有挂载成功才会打印读取结果。若 `mount` 报 `Operation not permitted`、`nfsd` 无法启动或 export 不可用，就停止并记录失败，不能用 bind mount 代替。`docker compose down -v` 清除实验数据。
+- `cached`：NFSv3 `vers=3,nolock,actimeo=10`。A 覆盖并关闭文件时 B 保持同一 open。预期 `initial open: before`、`same open, immediate: before`、`same open, after actimeo: after!`。Docker Desktop for macOS 上旧镜像的一次运行打印了此结果。
+- `close-to-open`：相同 NFSv3 挂载，但 B 在 A 关闭后、十秒超时前立即关闭并重开。预期 `close then reopen: after!`。
+- `noac`：关闭 NFSv3 属性缓存。预期立即读到 `after!`；脚本从 B 的 `/proc/self/mountstats` 打印 `GETATTR` 调用前后计数，展示额外元数据流量。实际计数不固定。
+- `write`：B 使用 `noac`，隔离写方策略。A 写入后保持文件打开；比较默认 async 和 `sync` 挂载下，A 关闭或调用 `fsync` 前 B 的读取。预期 async 可保持 `before` 直到刷新或关闭；`fsync` 和 `sync` 会更早使数据可见。内核可能提前刷新 async 写入，因此输出是真实观察，不保证固定值。
+- `v4`：NFSv4.2 `actimeo=10` 重复 open-reader 探针。旧镜像的一次运行打印出立即读到 `after!`：B 获得 read delegation，A 打开写入时触发 recall。若内核导出 delegation 行，脚本从 mountstats 打印；若没有，fresh read 与 recall 一致，但不能单独证明 grant。
+
+server 同时导出 NFSv3 (`server:/data`) 和 NFSv4 (`server:/`)。这些内核缓存语义不同于 Stubline 票据使用的整对象 PUT/GET 接口。
 
 ## 许可证
 

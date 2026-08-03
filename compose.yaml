@@ -1,11 +1,16 @@
 services:
   server:
-    image: erichough/nfs-server:2.2.1
+    build:
+      context: .
+      dockerfile: Dockerfile.server
     privileged: true
-    environment:
-      NFS_EXPORT_0: "/data *(rw,fsid=0,sync,no_subtree_check,no_root_squash)"
     volumes:
       - nfs_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "rpcinfo -p localhost | grep -q nfs"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
   client-a:
     build:
       context: .
@@ -14,7 +19,8 @@ services:
     volumes:
       - ./scripts:/opt/spike:ro
     depends_on:
-      - server
+      server:
+        condition: service_healthy
   client-b:
     build:
       context: .
@@ -23,6 +29,7 @@ services:
     volumes:
       - ./scripts:/opt/spike:ro
     depends_on:
-      - server
+      server:
+        condition: service_healthy
 volumes:
   nfs_data:
