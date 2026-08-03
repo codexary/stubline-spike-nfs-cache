@@ -58,14 +58,22 @@ if [[ "$mode" == write ]]; then
     docker compose exec -T client-a python3 /opt/spike/write_probe.py "$policy" > "$log" &
     probe_pid=$!
     wait_for_line 'writer has written'
-    printf 'B while A keeps file open: '
-    docker compose exec -T client-b cat /mnt/shared/cache-observation.txt
+    read_b() {
+      local value
+      value=$(docker compose exec -T client-b cat /mnt/shared/cache-observation.txt | tr -d "\r\n")
+      printf "B %s: '%s'\n" "$1" "$value"
+    }
+    read_b "while A keeps file open"
     docker compose exec -T client-a touch /tmp/release-writer
+    if [[ "$policy" == fsync ]]; then
+      wait_for_line "writer called fsync"
+      read_b "after A fsync, before close"
+      docker compose exec -T client-a touch /tmp/close-writer
+    fi
     wait "$probe_pid"
     probe_pid=
     cat "$log"
-    printf 'B after A fsync/close: '
-    docker compose exec -T client-b cat /mnt/shared/cache-observation.txt
+    read_b "after A closes"
     rm -f "$log"
     log=
   done
@@ -85,9 +93,5 @@ else
   if [[ "$mode" == noac ]]; then
     after=$(docker compose exec -T client-b python3 /opt/spike/getattr.py | tr -d '\r')
     printf 'NFSv3 GETATTR calls before=%s after=%s delta=%s\n' "$before" "$after" "$((after-before))"
-  fi
-  if [[ "$mode" == v4 ]]; then
-    printf 'NFSv4 delegation counters, when exported by this kernel:\n'
-    docker compose exec -T client-b sh -c "grep -i delegation /proc/self/mountstats || true"
   fi
 fi

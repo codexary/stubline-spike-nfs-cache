@@ -14,11 +14,11 @@ server 使用固定版本 Debian 12.12 镜像，安装 `nfs-kernel-server` 与 `
 ./scripts/observe.sh v4
 ```
 
-- `cached`（新镜像上的输出待记录）：NFSv3 `vers=3,nolock,actimeo=10`。A 覆盖并关闭文件时 B 保持同一 open。预期输出 `initial open: before`、`same open, immediate: before`、`same open, after actimeo: after!`；最后的 `close then reopen:` 预期为 `after!`。前三行曾在旧镜像上观察到。
-- `close-to-open`（关闭 NFSv2 后的一次运行）：相同 NFSv3 挂载，B 在 A 关闭后立即关闭并重开。实际输出为 `initial open: before`、`same open, immediate: before`、`close then reopen: after!`。
-- `noac`（待记录）：关闭 NFSv3 属性缓存。预期输出 `initial open: before`、`same open, immediate: after!`、`close then reopen: after!`。脚本还从 B 的 `/proc/self/mountstats` 打印 `NFSv3 GETATTR calls before=... after=... delta=...`；实际计数不固定。
-- `write`（待记录）：B 使用 `noac`，隔离写方策略。每个 `write policy: async|fsync|sync` 都预期先输出 `B initial: before`，再输出 `B while A keeps file open:` 和 `B after A fsync/close: after!`。中间一次读取在 async 策略下可能仍为 `before`，内核提前刷新时也可能为 `after!`；`fsync` 在这次读取之后才调用，无法改变已打印的结果。`sync` 挂载可能让中间一次读取更早看到 `after!`。脚本输出 `writer has written but remains open`，在对应策略下输出 `writer called fsync`，最后输出 `writer closed`。
-- `v4`（新镜像上的输出待记录）：NFSv4.2 `actimeo=10` 重复 open-reader 探针。预期输出 `initial open: before`、`same open, immediate: after!`、`close then reopen: after!`；旧镜像曾观察到立即读取新值。若内核导出 delegation 行，脚本会从 mountstats 打印。仅凭读取到新值不能证明曾授予并撤回 delegation。
+- `cached`：实测 `initial open: before`、`same open, immediate: before`、`same open, after actimeo: after!`、`close then reopen: after!`。
+- `close-to-open`：实测 `initial open: before`、`same open, immediate: before`、`close then reopen: after!`。
+- `noac`：实测 `initial open: before`、`same open, immediate: after!`、`close then reopen: after!`，以及 `NFSv3 GETATTR calls before=2 after=15 delta=13`。计数随运行变化。
+- `write`：记录中的运行显示，A 保持文件打开时，`async` 与 `fsync` 下 B 先读到空值；A 调用 `fsync` 后、关闭前，B 读到 `after!`；`sync` 下 A 保持文件打开时 B 已读到 `after!`。三种策略在关闭后 B 均读到 `after!`。见[写策略运行记录](docs/recorded-runs/write-policy.md)。
+- `v4`：实测 `initial open: before`、`same open, immediate: after!`、`close then reopen: after!`。此内核的 client mountstats 没有 delegation 计数，因此脚本不再打印空标题。读到新数据本身不能证明 delegation 曾被授予或撤销。如需证据，可在文件保持打开时检查 server 的 `/proc/fs/nfsd/clients/*/states`。
 
 server 同时导出 NFSv3 (`server:/data`) 和 NFSv4 (`server:/`)。这些内核缓存语义不同于 Stubline 票据使用的整对象 PUT/GET 接口。
 

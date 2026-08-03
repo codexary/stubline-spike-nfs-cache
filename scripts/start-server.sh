@@ -15,6 +15,12 @@ trap 'exit 0' TERM INT
 trap shutdown EXIT
 rpcbind -w -f &
 rpcbind_pid=$!
+ready=0
+for attempt in $(seq 1 50); do
+  if rpcinfo -p >/dev/null 2>&1; then ready=1; break; fi
+  sleep 0.1
+done
+if [ "$ready" -ne 1 ]; then echo "rpcbind did not become ready" >&2; exit 1; fi
 exportfs -ra
 rpc.nfsd -V 3 -V 4 8
 rpc.mountd -F &
