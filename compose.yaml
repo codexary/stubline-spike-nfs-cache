@@ -7,7 +7,7 @@ services:
     volumes:
       - nfs_data:/data
     healthcheck:
-      test: ["CMD-SHELL", "rpcinfo -p localhost | grep -q nfs"]
+      test: ["CMD-SHELL", "test \"$(cat /proc/fs/nfsd/threads)\" -gt 0 && rpcinfo -p localhost | awk '$5 == \"mountd\" { found=1 } END { exit !found }'"]
       interval: 2s
       timeout: 2s
       retries: 30

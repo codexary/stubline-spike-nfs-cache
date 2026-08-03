@@ -10,12 +10,18 @@ probe_pid=
 cleanup() {
   if [[ -n "$probe_pid" ]]; then wait "$probe_pid" 2>/dev/null || true; fi
   if [[ -n "$log" ]]; then rm -f "$log"; fi
+  stop_stack
+}
+stop_stack() {
+  for client in client-a client-b; do
+    docker compose exec -T "$client" sh -c 'umount -f /mnt/shared || umount -l /mnt/shared' 2>/dev/null || true
+  done
   docker compose down -v
 }
 trap cleanup EXIT
 
 start_stack() {
-  docker compose down -v
+  stop_stack
   docker compose up --build -d --wait
   for client in client-a client-b; do
     docker compose exec -T "$client" mkdir -p /mnt/shared
