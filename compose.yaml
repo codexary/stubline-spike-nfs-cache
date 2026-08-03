@@ -1,0 +1,28 @@
+services:
+  server:
+    image: erichough/nfs-server:2.2.1
+    privileged: true
+    environment:
+      NFS_EXPORT_0: "/data *(rw,fsid=0,sync,no_subtree_check,no_root_squash)"
+    volumes:
+      - nfs_data:/data
+  client-a:
+    build:
+      context: .
+      dockerfile: Dockerfile.client
+    privileged: true
+    volumes:
+      - ./scripts:/opt/spike:ro
+    depends_on:
+      - server
+  client-b:
+    build:
+      context: .
+      dockerfile: Dockerfile.client
+    privileged: true
+    volumes:
+      - ./scripts:/opt/spike:ro
+    depends_on:
+      - server
+volumes:
+  nfs_data:
