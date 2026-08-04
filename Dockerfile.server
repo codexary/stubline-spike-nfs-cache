@@ -1,5 +1,5 @@
 FROM debian:12.12-slim
-RUN apt-get update && apt-get install -y --no-install-recommends nfs-kernel-server nfs-common rpcbind && rm -rf /var/lib/apt/lists/*
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked --mount=type=cache,target=/var/lib/apt/lists,sharing=locked rm -f /etc/apt/apt.conf.d/docker-clean && apt-get update && apt-get install -y --no-install-recommends nfs-kernel-server nfs-common rpcbind
 RUN mkdir -p /data /run/rpcbind /proc/fs/nfsd && printf '/data *(rw,sync,no_subtree_check,no_root_squash,fsid=0,insecure)\n' > /etc/exports
 COPY scripts/start-server.sh /usr/local/bin/start-server
 RUN chmod +x /usr/local/bin/start-server

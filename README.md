@@ -2,6 +2,8 @@ English | [简体中文](README.zh-CN.md)
 
 # NFS client cache spike
 
+BuildKit caches apt package indexes and downloads across image rebuilds, reducing download traffic, build time, and CI cost.
+
 The server uses a pinned Debian 12.12 image with `nfs-kernel-server` and `nfs-common`; the clients use pinned Ubuntu 24.04, and both images support arm64 and amd64. The containers need `privileged: true` to start kernel NFS services and mount NFS filesystems. On Docker Desktop for macOS, the server and both clients share the Docker VM's Linux kernel: these two “machines” are separate kernel mounts on one host, not independent kernels. The server enables NFSv3 and NFSv4; it does not request NFSv2, which current kernels no longer support.
 
 Run `./mvnw -q verify`, then each script from the repository root. Every invocation creates a fresh volume and mounts, so B's cache starts in a known state. On exit and between the three `write` policies, the script unmounts both clients before `docker compose down -v`. The server's SIGTERM handler unexports the data and stops the kernel NFS threads, mount daemon, and port mapper. Run each command twice in a row and check that `docker compose ps -a` lists no containers after each run.
