@@ -4,7 +4,7 @@
 
 BuildKit 在镜像重新构建时复用 apt 软件包索引和下载缓存，减少下载量、构建时间及 CI 成本。
 
-server 使用固定版本 Debian 12.12 镜像，安装 `nfs-kernel-server` 与 `nfs-common`；client 使用固定版本 Ubuntu 24.04 镜像，两种镜像均支持 arm64 和 amd64。容器需要 `privileged: true` 才能启动内核 NFS 服务并挂载 NFS 文件系统。在 macOS Docker Desktop 上，server 和两个 client 共用 Docker VM 的 Linux 内核：两台“机器”是同一主机上的两个内核挂载，不是独立内核。server 启用 NFSv3 和 NFSv4，不请求当前内核已不支持的 NFSv2。
+server 镜像基于 Debian 12.12 slim，安装 `nfs-kernel-server` 与 `nfs-common`；client 基于 Ubuntu 24.04。两个基础镜像都在 Dockerfile 里按摘要（digest）固定，重新构建时用的是同一组基础层；两者都支持 arm64 和 amd64。容器需要 `privileged: true` 才能启动内核 NFS 服务并挂载 NFS 文件系统。在 macOS Docker Desktop 上，server 和两个 client 共用 Docker VM 的 Linux 内核：两台“机器”是同一主机上的两个内核挂载，不是独立内核。server 启用 NFSv3 和 NFSv4，不请求当前内核已不支持的 NFSv2。
 
 运行 `./mvnw -q verify`，再从仓库根目录运行各脚本。每次调用都新建 volume 和挂载，确保 B 的缓存从已知状态开始。退出时和 `write` 的三种策略之间，脚本先卸载两个 client，再运行 `docker compose down -v`。server 的 SIGTERM 处理函数取消导出数据，停止内核 NFS 线程、mount daemon 和 port mapper。每条命令连续运行两次，并在每次运行后检查 `docker compose ps -a` 没有剩余容器。
 
